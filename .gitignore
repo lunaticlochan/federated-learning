@@ -1,0 +1,12 @@
+/venv/
+/models/
+/src/server/models/
+/src/server/data/
+/src/server/__pycache__/
+/src/feature_extraction/__pycache__/
+/src/feature_extraction/models/
+/src/feature_extraction/data/
+/data/embeddings/
+/data/global_model/
+/shared/__pycache__
+/data/students_dataset/
