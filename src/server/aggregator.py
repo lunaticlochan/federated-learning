@@ -37,28 +37,48 @@ class FeatureAggregator:
             self.logger.error(f"Error adding student embedding: {str(e)}")
             return False
     
-    def save_model(self) -> bool:
-        """Save student embedding"""
+    def aggregate_embeddings(self, embeddings: Dict[str, np.ndarray]) -> np.ndarray:
+        """Aggregate multiple embeddings into one model"""
         try:
-            if self.student_embedding is None:
-                self.logger.error("No student embedding to save")
+            # Store all embeddings
+            self.student_embeddings = embeddings
+            
+            # Calculate average embedding
+            all_embeddings = np.stack(list(embeddings.values()))
+            average_embedding = np.mean(all_embeddings, axis=0)
+            
+            # Normalize the average embedding
+            average_embedding = average_embedding / np.linalg.norm(average_embedding)
+            
+            self.logger.info(f"Successfully aggregated {len(embeddings)} embeddings")
+            return average_embedding
+            
+        except Exception as e:
+            self.logger.error(f"Error aggregating embeddings: {str(e)}")
+            return None
+    
+    def save_model(self) -> bool:
+        """Save aggregated model"""
+        try:
+            if not self.student_embeddings:
+                self.logger.error("No embeddings to save")
                 return False
             
-            # Create a dictionary with embedding
+            # Create a dictionary with embeddings and metadata
             model_data = {
-                'student_id': self.student_id,
-                'embedding': self.student_embedding,
+                'student_embeddings': self.student_embeddings,
+                'num_students': len(self.student_embeddings),
                 'timestamp': datetime.now().strftime("%Y%m%d_%H%M%S")
             }
             
             # Save to file
             save_path = os.path.join(
                 self.model_save_dir, 
-                f"student_model_{self.student_id}_{model_data['timestamp']}.npz"
+                f"global_model_{model_data['timestamp']}.npz"
             )
             
             np.savez(save_path, **model_data)
-            self.logger.info(f"Saved model for student {self.student_id}")
+            self.logger.info(f"Saved model with {len(self.student_embeddings)} students")
             return True
             
         except Exception as e:

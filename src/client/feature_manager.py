@@ -1,6 +1,6 @@
 import numpy as np
 import os
-from typing import Optional, List
+from typing import Optional, List, Dict
 import logging
 from datetime import datetime
 
@@ -19,6 +19,7 @@ class FeatureManager:
         self.feature_path = feature_path
         self.current_embedding = None
         self.embedding_timestamp = None
+        self.embeddings = {}  # Initialize embeddings dictionary
         
         # Setup logging
         logging.basicConfig(level=logging.INFO)
@@ -73,6 +74,39 @@ class FeatureManager:
         except Exception as e:
             self.logger.error(f"Error updating embedding: {str(e)}")
             return False
+
+    def load_embeddings(self) -> bool:
+        """Load all embeddings from the embeddings directory"""
+        try:
+            embedding_files = [f for f in os.listdir(self.feature_path) 
+                             if f.endswith('_embedding.npy')]
+            
+            if not embedding_files:
+                self.logger.error(f"No embedding files found in: {self.feature_path}")
+                return False
+            
+            self.embeddings = {}
+            for file in embedding_files:
+                student_id = file.replace('_embedding.npy', '')
+                embedding_path = os.path.join(self.feature_path, file)
+                embedding = np.load(embedding_path)
+                # Normalize embedding
+                self.embeddings[student_id] = embedding / np.linalg.norm(embedding)
+            
+            self.embedding_timestamp = datetime.now()
+            self.logger.info(f"Loaded {len(self.embeddings)} embeddings successfully")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Error loading embeddings: {str(e)}")
+            return False
+
+    def get_features(self) -> Optional[Dict[str, np.ndarray]]:
+        """Get all features for sharing"""
+        if not self.embeddings:
+            if not self.load_embeddings():
+                return None
+        return self.embeddings
 
 def main():
     """Test feature manager"""

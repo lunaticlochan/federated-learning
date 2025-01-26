@@ -13,7 +13,7 @@ from feature_extraction.face_processor import FaceProcessor
 class GlobalModelTester:
     def __init__(self, 
                  global_model_dir: str = "data/global_model",
-                 test_images_dir: str = "../../data/test_images"):
+                 test_images_dir: str = "../../data/test-images"):
         self.global_model_dir = global_model_dir
         self.test_images_dir = test_images_dir
         
@@ -49,56 +49,51 @@ class GlobalModelTester:
             self.logger.error(f"Error loading model: {str(e)}")
             return None
 
-    def save_result_image(self, image_path: str, similarity: float, face):
-        """Save the test image with similarity score and face box"""
+    def save_result_image(self, image_path: str, faces, img, match_results: list):
+        """Save test image with face boxes and match information"""
         try:
-            img = cv2.imread(image_path)
-            if img is None:
-                self.logger.error(f"Could not load image for saving: {image_path}")
-                return
-            
-            if face is not None:
-                # Draw face bounding box
+            # Draw results on image
+            for face, matches in zip(faces, match_results):
+                if matches is None:
+                    continue
+                
+                # Get face box
                 x1, y1, x2, y2 = [int(b) for b in face.bbox]
                 
-                # Set color based on threshold (0.5)
+                # Find best match
+                best_match = max(matches.items(), key=lambda x: x[1])
+                student_id, similarity = best_match
+                
+                # Set color based on similarity threshold
                 threshold = 0.5
                 is_match = similarity > threshold
-                color = (0, 255, 0) if is_match else (0, 0, 255)  # Green for match, Red for no match
+                color = (0, 255, 0) if is_match else (0, 0, 255)
                 
-                # Draw rectangle around face
+                # Draw face box
                 cv2.rectangle(img, (x1, y1), (x2, y2), color, 2)
                 
-                # Add text with similarity and threshold
-                text_lines = [
-                    f"Similarity: {similarity:.2f}",
-                    f"Threshold: {threshold:.2f}",
-                    "MATCH" if is_match else "NO MATCH"
-                ]
+                # Add match information
+                if is_match:
+                    text = f"Student {student_id}: {similarity:.2f}"
+                else:
+                    text = f"No match: {similarity:.2f}"
                 
-                # Position text
-                y_position = 30
-                for text in text_lines:
-                    cv2.putText(img, text, (10, y_position), 
-                               cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2)
-                    y_position += 30
+                cv2.putText(img, text, (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 
+                            0.6, color, 2)
             
-            # Create results directory if it doesn't exist
-            results_dir = "../../data/test_results"
+            # Save result
+            results_dir = os.path.join(os.path.dirname(self.test_images_dir), "test_results")
             os.makedirs(results_dir, exist_ok=True)
             
-            # Save image with timestamp
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            output_path = os.path.join(results_dir, 
-                                     f"result_{timestamp}_{os.path.basename(image_path)}")
+            output_path = os.path.join(results_dir, f"result_{os.path.basename(image_path)}")
             cv2.imwrite(output_path, img)
-            self.logger.info(f"Result saved to: {output_path}")
+            self.logger.info(f"Saved result to: {output_path}")
             
         except Exception as e:
             self.logger.error(f"Error saving result image: {str(e)}")
 
     def process_test_image(self, image_path):
-        """Process a single test image and return embedding and face"""
+        """Process a single test image and return embeddings and faces"""
         try:
             # Read image
             img = cv2.imread(image_path)
@@ -106,43 +101,38 @@ class GlobalModelTester:
                 self.logger.error(f"Could not load image: {image_path}")
                 return None, None
             
-            # Get face embedding
+            # Get faces and embeddings
             faces = self.face_processor.app.get(img)
             
             if not faces:
-                self.logger.error("No face detected in test image")
+                self.logger.error("No faces detected in test image")
                 return None, None
             
-            # Get the largest face
-            face = max(faces, key=lambda x: (x.bbox[2] - x.bbox[0]) * (x.bbox[3] - x.bbox[1]))
-            test_embedding = face.embedding
-            
-            return test_embedding, face
+            # Return all faces and their embeddings
+            return faces, img
             
         except Exception as e:
             self.logger.error(f"Error processing test image {image_path}: {str(e)}")
             return None, None
 
-    def compare_embeddings(self, test_embedding, model_embedding):
-        """Compare test embedding with model embedding"""
+    def compare_embeddings(self, test_embedding: np.ndarray, student_embeddings: dict) -> dict:
+        """Compare test embedding with all student embeddings"""
+        results = {}
         try:
-            # Normalize embeddings
-            test_norm = np.linalg.norm(test_embedding)
-            model_norm = np.linalg.norm(model_embedding)
+            # Normalize test embedding
+            test_embedding = test_embedding / np.linalg.norm(test_embedding)
             
-            test_normalized = test_embedding / test_norm
-            model_normalized = model_embedding / model_norm
+            # Compare with each student embedding
+            for student_id, student_embedding in student_embeddings.items():
+                # Normalize student embedding
+                student_embedding = np.array(student_embedding)
+                student_embedding = student_embedding / np.linalg.norm(student_embedding)
+                
+                # Calculate similarity
+                similarity = np.dot(test_embedding, student_embedding)
+                results[student_id] = similarity
             
-            # Calculate cosine similarity
-            similarity = np.dot(test_normalized, model_normalized)
-            
-            return {
-                'similarity': similarity,
-                'test_norm': test_norm,
-                'model_norm': model_norm,
-                'test_embedding': test_embedding,
-                'model_embedding': model_embedding
-            }
+            return results
             
         except Exception as e:
             self.logger.error(f"Error comparing embeddings: {str(e)}")
@@ -184,16 +174,9 @@ def main():
         return
     
     print(f"\nModel Info:")
-    # The model_data is a dictionary of student embeddings
-    print(f"Number of students: {len(model_data)}")
-    
-    # Get the first student's embedding (since we only have one in this case)
-    student_id = list(model_data.keys())[0]
-    student_embedding = model_data[student_id]
-    print(f"Using student ID: {student_id}")
+    print(f"Number of students in model: {len(model_data)}")
     
     # Process all test images
-    test_results = {}
     test_files = [f for f in os.listdir(tester.test_images_dir) 
                  if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
     
@@ -203,37 +186,37 @@ def main():
         image_path = os.path.join(tester.test_images_dir, test_file)
         print(f"\nTesting image: {test_file}")
         
-        # Get embedding and face for test image
-        test_embedding, face = tester.process_test_image(image_path)
-        if test_embedding is None:
+        # Get faces and embeddings from test image
+        faces, img = tester.process_test_image(image_path)
+        if faces is None or img is None:
             print(f"Failed to process {test_file}")
             continue
         
-        # Compare with model
-        comparison = tester.compare_embeddings(test_embedding, student_embedding)
-        if comparison is None:
-            print(f"Failed to compare embeddings for {test_file}")
-            continue
+        print(f"Found {len(faces)} faces in image")
         
-        test_results[image_path] = comparison
-        similarity = comparison['similarity']
-        print(f"Similarity score: {similarity:.4f}")
+        # Compare each face with all student embeddings
+        match_results = []
+        for face in faces:
+            # Compare with all student embeddings
+            matches = tester.compare_embeddings(face.embedding, model_data)
+            if matches is None:
+                print(f"Failed to compare embeddings for a face")
+                match_results.append(None)
+                continue
+            
+            # Find best match
+            best_match = max(matches.items(), key=lambda x: x[1])
+            student_id, similarity = best_match
+            
+            if similarity > 0.5:
+                print(f"Face matched with Student {student_id} (similarity: {similarity:.2f})")
+            else:
+                print(f"Face has no good match (best similarity: {similarity:.2f})")
+            
+            match_results.append(matches)
         
-        # Save result image with face box and similarity score
-        tester.save_result_image(image_path, similarity, face)
-    
-    if test_results:
-        # Visualize results
-        plot_file = tester.visualize_results(test_results)
-        print(f"\nResults visualization saved as: {plot_file}")
-        
-        # Print summary
-        print("\nTest Summary:")
-        print("-------------")
-        for image_path, result in test_results.items():
-            print(f"{os.path.basename(image_path)}: {result['similarity']:.4f}")
-    else:
-        print("\nNo test results generated!")
+        # Save result image with all faces and their matches
+        tester.save_result_image(image_path, faces, img, match_results)
 
 if __name__ == "__main__":
     main() 

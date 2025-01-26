@@ -1,13 +1,12 @@
 /venv/
 /models/
-/data/test_results/
 /src/server/models/
 /src/server/data/
-/src/server/test_results/
 /src/server/__pycache__/
 /src/feature_extraction/__pycache__/
 /src/feature_extraction/models/
-/data/test_results/
+/src/feature_extraction/data/
 /data/embeddings/
 /data/global_model/
-
+/shared/__pycache__
+/data/students_dataset/

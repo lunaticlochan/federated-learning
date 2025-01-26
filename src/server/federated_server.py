@@ -92,14 +92,17 @@ class FederatedServer:
                 message = self.receive_message(client_socket)
                 
                 if message.type == MessageType.SEND_FEATURES:
-                    features = np.array(message.data["features"])
-                    student_id = message.data["student_id"]
+                    # Get all student embeddings
+                    embeddings = {
+                        student_id: np.array(embedding)
+                        for student_id, embedding in message.data["features"].items()
+                    }
                     
-                    # Store features
-                    self.student_embeddings[student_id] = features
+                    # Update global model
+                    self.student_embeddings.update(embeddings)
                     self.save_global_model()
                     
-                    self.logger.info(f"Received and saved features from {student_id}")
+                    self.logger.info(f"Received and saved {len(embeddings)} embeddings")
                     
                     # Send acknowledgment
                     ack = FederatedProtocol.create_ack_message(

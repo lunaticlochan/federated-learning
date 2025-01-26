@@ -41,13 +41,21 @@ class FederatedProtocol:
         )
     
     @staticmethod
-    def create_feature_message(student_id: str, features: np.ndarray) -> Message:
-        """Create feature sharing message"""
+    def create_feature_message(student_id: str, features: Dict[str, Any]) -> Message:
+        """Create message for sending features"""
+        # Convert numpy arrays to lists if needed
+        features_dict = {}
+        for sid, embedding in features.items():
+            if isinstance(embedding, np.ndarray):
+                features_dict[sid] = embedding.tolist()
+            else:
+                features_dict[sid] = embedding
+        
         return Message(
             type=MessageType.SEND_FEATURES,
             data={
                 "student_id": student_id,
-                "features": features.tolist()
+                "features": features_dict
             }
         )
     
